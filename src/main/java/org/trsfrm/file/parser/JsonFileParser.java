@@ -1,6 +1,7 @@
 package org.trsfrm.file.parser;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
@@ -15,7 +16,6 @@ import org.trsfrm.model.FileSettingsToSend;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-
 @Service("jsonFile")
 @Qualifier("jsonFile")
 public class JsonFileParser extends FileParser {
@@ -27,35 +27,35 @@ public class JsonFileParser extends FileParser {
 		super(jsonFileValidatorService, fileAttributeService);
 	}
 
+	/**
+	 * load a json file and load all requested  object node
+	 * @param fileSetting : file descriptor 
+	 * @return : iterator of object node wich contain attributes list
+	 */
 	@Override
 	public Iterator<String> readBlock(FileSettingsToSend fileSetting) {
 		ObjectMapper mapper = new ObjectMapper();
-		System.out.println("inside readBlock json implementation");
+		List<JsonNode> listNodeToParse = new ArrayList<>();
 		if (fileSetting == null)
 			throw new NullPointerException();
 		List<String> listAttribute = fileAttributeService.getAttributes(fileSetting.getDiretoryPath());
 		String[] blocDelimitor = fileAttributeService.getDelimitorRepositpry(fileSetting.getDiretoryPath());
-		System.out.println("after validator "+blocDelimitor);
-
 		JsonNode root = null;
 		try {
 			root = mapper.readTree(fileSetting.getFile());
 
 		} catch (IOException e1) {
-			// TODO Auto-generated catch block
 			e1.printStackTrace();
 			return null;
 		}
 		if (root == null)
 			return null;
-		Iterator<JsonNode> nodeIterator;
-		if (root.elements().next().isArray())
-			nodeIterator = root.elements().next().elements();
-		else
-			nodeIterator = root.elements();
+		getListNodeObject(root, blocDelimitor, listNodeToParse);
+		if (listNodeToParse == null || listNodeToParse.size() == 0)
+			return null;
+		Iterator<JsonNode> nodeIterator = listNodeToParse.iterator();
 
 		return new Iterator<String>() {
-			JsonNode node;
 
 			@Override
 			public boolean hasNext() {
@@ -65,57 +65,85 @@ public class JsonFileParser extends FileParser {
 
 			@Override
 			public String next() {
-				int i = 0;
-				node = nodeIterator.next();
-				System.out.println("after nex " + node.toString());
-				if(blocDelimitor != null  && blocDelimitor.length >0)
-				Arrays.stream(blocDelimitor).forEach(e -> {
-					node = node.path(e);
-					System.out.println("inside next " + node.toString());
-				});
-				String result = null;
-				System.out.println("find : "+node.toString()+" list Attr :"+listAttribute.toString());
-				if (node.isArray()) {
-					System.out.println("It is Array "+node.toString());
-					for (JsonNode node1 : node) {
-
-						if (i != 0)
-						{ if(node1.isValueNode()) result = result+","+listAttribute.get(0)+"="+node1.toString();
-						else
-							result = result + "," + listAttribute.stream().map(e -> e + "=" + ((JsonNode)node1.get(e)).textValue())
-									.collect(Collectors.joining(","));
-						}
-							else{
-							    if(node1.isValueNode()) result = listAttribute.get(0)+"="+node1.toString();
-							    else
-								result = listAttribute.stream().map(e -> e + "=" +  ((JsonNode)node1.get(e)).textValue())
-									.collect(Collectors.joining(","));
-							}
-							i++;
-					}
-				} else
-					if(node.isObject()){
-					result = listAttribute.stream().map(e -> e + "=" + ((JsonNode)node.get(e)).textValue() ).collect(Collectors.joining(","));
-					}else if(node.isValueNode()){
-						result  = listAttribute.get(0)+"="+node.toString();
-					}
-				System.out.println("return "+result);
-				return result;
+				String res = null;
+				JsonNode node = nodeIterator.next();
+				/** get all attributes value in same result string, separated by comma **/
+				if (node.isObject())
+					res = listAttribute.stream().map(e -> extractAttributeValues(node, e)).filter(e -> e != null)
+							.collect(Collectors.joining(","));
+				return res;
 			}
 
 		};
 
 	}
 
-	public void getDeepTreeWay(JsonNode node, String[] delimitor, List<JsonNode> listNode){
-		if(node == null) return;
-		System.out.println(node.toString()+" :Delimitor "+delimitor.length);
-		if(delimitor.length==0) {listNode.add(node); System.out.println("adding node "+node.toString());return;}
-		if(node.isObject()) {System.out.println("is object "+node.toString());getDeepTreeWay(node.path(delimitor[0]),Arrays.copyOfRange(delimitor,1,delimitor.length), listNode);}
-		if(node.isArray()){
-			//if(delimitor.length>=2)
-			for(JsonNode nodeChild : node) getDeepTreeWay(nodeChild.path(delimitor[0]), Arrays.copyOfRange(delimitor,1,delimitor.length), listNode);
+	/**
+	 * parse node and extract the attribute value, 
+	 * @param node : node from which we extract attribute value
+	 * @param attribute : the attribute to look for
+	 * @return : is key  value form of : attributeName=attributeValue
+	 */
+	private String extractAttributeValues(JsonNode node, String attribute) {
+		{
+			String result = null;
+			JsonNode valueNode;
+
+			/** we have two case :  
+			 *  1.node contain an array of value, of for [val1,val2,val3]
+			 *  2. node contain one occurence attribute value on form key:value
+			 * **/
+			if (node.get(attribute) != null && node.get(attribute).isArray()) {
+				/*
+				if (node.get(attribute) == null)
+					return null;
+				*/
+				System.out.println(node.toString());
+				Iterator<JsonNode> valueArray = node.get(attribute).elements();
+				while (valueArray.hasNext()) {
+					valueNode = valueArray.next();
+					System.out.println(valueNode.toString());
+					if (valueNode.isValueNode()) {
+						if (result != null)
+							result = result + "," + attribute + "=" + valueNode.asText();
+						else
+							result = attribute + "=" + valueNode.asText();
+					} 
+				}
+			}
+			if (node.get(attribute) != null && node.get(attribute).isValueNode()) {
+				result = attribute + "=" + node.get(attribute).asText();
+			}
+			return result;
 		}
-		
+	}
+
+	/**
+	 * it is recursive method,get all object of tree, stop on last object node
+	 * each returned object will contain a set of requested attributes
+	 * @param node : node to check if it is researched node or not, if yes add it to list, else call method to its child
+	 * @param delimitor : a list of node tree to parse
+	 * @param listNode : list which contain our result node
+	 */
+	public void getListNodeObject(JsonNode node, String[] delimitor, List<JsonNode> listNode) {
+		if (node == null)
+			return;
+		if (delimitor.length == 0) {
+			if (node.isArray())
+				for (JsonNode child : node)
+					listNode.add(child);
+			else
+				listNode.add(node);
+			return;
+		}
+		if (node.isObject()) {
+			getListNodeObject(node.path(delimitor[0]), Arrays.copyOfRange(delimitor, 1, delimitor.length), listNode);
+		}
+		if (node.isArray()) {
+			for (JsonNode nodeChild : node)
+				getListNodeObject(nodeChild.path(delimitor[0]), Arrays.copyOfRange(delimitor, 1, delimitor.length),
+						listNode);
+		}
+
 	}
 }

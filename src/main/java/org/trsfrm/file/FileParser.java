@@ -59,7 +59,7 @@ public abstract class FileParser {
 
 	public boolean movFile(String destPath, FileSettingsToSend fileSetting) {
 		boolean moveResult;
-		// try
+		try
 		{
 			String direstoryPath = fileSetting.getDiretoryPath();
 			File file = fileSetting.getFile();
@@ -73,9 +73,8 @@ public abstract class FileParser {
 			}
 			fileSetting.setFile(destFile);
 		}
-		/*
-		 * catch(Exception e){ return false; }
-		 */
+		catch(Exception e){ return false; }
+		
 		return moveResult;
 
 	}
