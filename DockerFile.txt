@@ -1,0 +1,5 @@
+﻿FROM openjdk
+MAINTAINER lyes bensaada<bensaadalyes82@gmail.com>
+ADD target/FileTransformerApp-1.0.jar FileTransformerApp.jar
+COPY lib  /lib
+ENTRYPOINT ["java","-jar","-cp","lib", "FileTransformerApp.jar"] 
